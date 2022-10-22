@@ -1,8 +1,11 @@
 package hierarchy;
 
+import lombok.Getter;
+
 import java.util.ArrayList;
 import java.util.List;
 
+@Getter
 public class SampleNode implements HierarchyUsable<SampleNode> {
 
     private Long id;

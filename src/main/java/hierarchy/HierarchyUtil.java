@@ -1,22 +1,31 @@
 package hierarchy;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+
+import javax.swing.text.html.Option;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 public class HierarchyUtil<T extends HierarchyUsable> {
+    @Getter
     private final List<T> list;
     private List<T> hierarchy = null;
 
     private SortType sortType = null;
+
+    public static Integer ROOT_DEPTH = 1;
 
     /**
      * HierarchyUsable을 구현한 구현체 list
      *
      * HierarchyUsable
      * no: 자신의 고유 값
-     * parentNo: 부모 노드에 고유 값
+     * parentNo: 부모 노드에 고유 값, 반드시 null인 Node가 1개 이상 있어야 한다.
      * weight: 정렬될 경우에 사용 되는 값, 해당 값 기준으로 오름차 순 혹은 내림차 순 제공
      * children: 빈 ArrayList,
      *
@@ -34,12 +43,17 @@ public class HierarchyUtil<T extends HierarchyUsable> {
             }
         }
     }
-    private void sortAscendingRecursive(List<T> list) {
-        sortRecursive(list, Comparator.comparing(HierarchyUsable::weight));
+    private Comparator<T> sortType(SortType sortType) {
+        switch (sortType) {
+            case Ascending:
+                return Comparator.comparing(HierarchyUsable::weight);
+            case Descending:
+                return Comparator.comparing((T item) -> item.weight()).reversed();
+            default:
+                throw new RuntimeException();
+        }
     }
-    private void sortDescendingRecursive(List<T> list) {
-        sortRecursive(list, Comparator.comparing((T item) -> item.weight()).reversed());
-    }
+
 
     private List<T> createHierarchy(List<T> list) {
         for (var i = 0; i < list.size(); i++) {
@@ -60,22 +74,49 @@ public class HierarchyUtil<T extends HierarchyUsable> {
                 .filter(item -> item.parentNo() == null || item.parentNo() == 0)
                 .collect(Collectors.toList());
     }
-    private void retrieve(T parent, List<T> list, HierarchyRetrieving<T> hierarchyRetrieving) {
+    private void retrieve(T parent, List<T> list, HierarchyRetrieving<T> hierarchyRetrieving, Integer depth) {
         for (T item : list) {
-            hierarchyRetrieving.retrieve(item, parent);
+            hierarchyRetrieving.retrieve(item, parent, depth);
             if (item.children().size() != 0) {
-                retrieve(item, item.children(), hierarchyRetrieving);
+                retrieve(item, item.children(), hierarchyRetrieving, depth + 1);
             }
         }
     }
     public void retrieve(HierarchyRetrieving<T> hierarchyRetrieving) {
         var list = getListByHierarchy();
         for (T item : list) {
-            hierarchyRetrieving.retrieve(item, null);
+            hierarchyRetrieving.retrieve(item, null, ROOT_DEPTH);
             if (item.children().size() != 0) {
-                retrieve(item, item.children(), hierarchyRetrieving);
+                retrieve(item, item.children(), hierarchyRetrieving, ROOT_DEPTH + 1);
             }
         }
+    }
+    private Optional<Node<T>> get(Long id) {
+        var node = new AtomicReference<Node<T>>();
+        retrieve((current, parent, depth) -> {
+            if (current.no() == id) {
+                node.set(new Node<>(parent, current, current.children(), depth));
+            }
+        });
+        return Optional.ofNullable(node.get());
+    }
+    public Optional<Integer> getDepth(Long id) {
+        var node = get(id);
+        return node.isEmpty() ? Optional.empty() : Optional.of(node.orElseThrow().getDepth());
+    }
+    public Optional<T> getParent(Long id) {
+        var node = get(id);
+        return node.isEmpty() ? Optional.empty() : Optional.ofNullable(node.orElseThrow().getParent());
+    }
+
+    public Optional<T> getCurrent(Long id) {
+        var node = get(id);
+        return node.isEmpty() ? Optional.empty() : Optional.of(node.orElseThrow().getCurrent());
+    }
+
+    public List<T> getChildren(Long id) {
+        var node = get(id);
+        return node.isEmpty() ? List.of() : node.orElseThrow().getChildren();
     }
 
     /**
@@ -89,14 +130,7 @@ public class HierarchyUtil<T extends HierarchyUsable> {
             return this.hierarchy;
         }
         var list = createHierarchy(this.list);
-        switch (sortType) {
-            case Ascending:
-                sortAscendingRecursive(list);
-                break;
-            case Descending:
-                sortDescendingRecursive(list);
-                break;
-        }
+        sortRecursive(list, sortType(sortType));
         this.hierarchy = list;
         this.sortType = sortType;
         return list;
@@ -123,5 +157,14 @@ public class HierarchyUtil<T extends HierarchyUsable> {
 
     enum SortType {
         Ascending, Descending
+    }
+
+    @AllArgsConstructor
+    @Getter
+    static class Node<T> {
+        private T parent;
+        private T current;
+        private List<T> children;
+        private Integer depth;
     }
 }
